@@ -69,9 +69,24 @@ Cold start went from ~40 s to ~2.5 s. Warm typing costs ~11 ms of engine time pe
 frames average 6–8 ms. The first word after a fresh start is ~40–50 ms per touch while the JIT
 compiles. `ninbridge: perf:` lines in logcat report frame and touch timings every 5 s.
 
+**On-demand rendering** (`NINView.kt`). The original rendered continuously at 60 fps. The view now
+renders when dirty: while a finger is down, for 1.5 s after any touch or text event (the engine's
+timers, e.g. autospace), and while frames keep changing. Otherwise it only steps the engine at 4 Hz.
+"Changed" comes from a fingerprint of each frame's GL commands and data computed in the bridge
+(`gles.cpp`, `NINLib.frameChanged()`). The engine's own `onRoenSignalDirty` fires nearly every
+frame, so it is useless for this. Idle GL-thread CPU went from ~50% to ~4%. On 32-bit devices
+(original library, no `frameChanged`) the view stays continuous.
+
 Still open: ~330 MB of host heap is dynarmic per-block metadata (linking and fastmem fault
-recovery for ~100k+ blocks). The renderer runs continuously (`EXSurfaceView` render mode 1) even
-when idle, as in the original.
+recovery for ~100k+ blocks).
+
+## Known issues
+
+- **Black keyboard after a phone call** (also on the original app and old phones). After the call
+  the surface is recreated, one frame renders, then the GL thread stops drawing. Switching apps does
+  not reproduce it; the screen turning off during the call (proximity sensor), and possibly EGL
+  context loss, are the suspects. Debug builds log `EXSurfaceView` lifecycle and GL-thread wait
+  states to catch the next occurrence.
 
 ## Building
 

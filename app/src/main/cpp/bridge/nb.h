@@ -328,6 +328,7 @@ void register_libc();
 void register_stdio();
 void register_pthread();
 void register_gles();
+bool gles_take_frame_changed();  // did the frame just rendered differ from the previous one?
 void register_android();
 void register_jni();
 

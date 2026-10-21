@@ -21,6 +21,7 @@ void fakegl_trace(FILE* f);
 jint JNI_OnLoad(JavaVM*, void*);
 void Java_com_jormy_nin_NINLib_init(JNIEnv*, jclass, jint, jint, jint, jint);
 void Java_com_jormy_nin_NINLib_step(JNIEnv*, jclass);
+jboolean Java_com_jormy_nin_NINLib_frameChanged(JNIEnv*, jclass);
 jlong Java_com_jormy_nin_NINLib_syncTiming(JNIEnv*, jclass, jlong);
 void Java_com_jormy_nin_NINLib_onTouchEvent(JNIEnv*, jclass, jint, jint, jfloat, jfloat, jfloat, jfloat, jlong);
 void Java_com_jormy_nin_NINLib_onChangeAppOrTextbox(JNIEnv*, jclass, jstring, jstring, jstring);
@@ -32,18 +33,22 @@ jlong Java_com_jormy_nin_NINLib_processSoftKeyboardCursorMovementLeft(JNIEnv*, j
 static JNIEnv* env;
 static jclass cls;
 static int frame_no = 0;
+int g_frame_no_for_trace = 0;
 
 static int64_t now_ms() { return nb_fake_time_us / 1000; }
 
 static void frame() {
     static int trace_frame = getenv("FAKEGL_TRACE_FRAME") ? atoi(getenv("FAKEGL_TRACE_FRAME")) : -1;
     if (frame_no == trace_frame) fakegl_trace(stderr);
+    g_frame_no_for_trace = frame_no;
     Java_com_jormy_nin_NINLib_step(env, cls);
     fakegl_trace(nullptr);
     nb_fake_time_us += 16667;
     uint64_t calls, draws;
     uint64_t hsh = fakegl_take_hash(&calls, &draws);
-    printf("frame %4d  gl=%016" PRIx64 "  calls=%" PRIu64 " draws=%" PRIu64 "\n", frame_no++, hsh, calls, draws);
+    bool changed = Java_com_jormy_nin_NINLib_frameChanged(env, cls);
+    printf("frame %4d  gl=%016" PRIx64 "  calls=%" PRIu64 " draws=%" PRIu64 " changed=%d\n", frame_no++, hsh, calls, draws,
+           changed);
 }
 
 static void tap(float x, float y) {

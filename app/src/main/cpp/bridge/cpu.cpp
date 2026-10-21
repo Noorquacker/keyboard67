@@ -1,4 +1,6 @@
+#include <pthread.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -355,6 +357,9 @@ GuestThread::GuestThread() {
     mem_protect(stack_base + kPageSize, stack_size, PROT_READ | PROT_WRITE);
     stack_base += kPageSize;
     tls = map_alloc(tlsoff::kSize, PROT_READ | PROT_WRITE);
+    char name[32] = "?";
+    prctl(PR_GET_NAME, name);
+    NB_LOGI("host thread '%s' entered the guest (guest tid %u)", name, tid);
 }
 
 GuestThread::~GuestThread() {

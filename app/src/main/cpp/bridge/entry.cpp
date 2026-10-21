@@ -143,6 +143,11 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_step(JNIEnv* env, jclass cls) {
     g_stats.frame(now_ms() - t0);
 }
 
+// Not part of the original library: lets the view stop rendering while the picture is static.
+JNIEXPORT jboolean JNICALL Java_com_jormy_nin_NINLib_frameChanged(JNIEnv*, jclass) {
+    return gles_take_frame_changed() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jlong JNICALL Java_com_jormy_nin_NINLib_syncTiming(JNIEnv* env, jclass cls, jlong t) {
     GUEST_FN(Java_com_jormy_nin_NINLib_syncTiming)
     return jlong(call_guest(fn, {genv, gcls, ga64(u64(t))}));

@@ -647,7 +647,7 @@ class SoftKeyboard : InputMethodService() {
             Handler(Looper.getMainLooper()).post { k.processTextOps() }
         }
 
-        fun doTextEvent(event: TextBoxEvent) = keyboard?.textBoxEventQueue?.add(event)
+        fun doTextEvent(event: TextBoxEvent) = keyboard?.textBoxEventQueue?.add(event).also { NINView.wake() }
 
         private fun keyDownUp(
             ic: InputConnection,

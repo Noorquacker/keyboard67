@@ -6,12 +6,14 @@ import android.opengl.EGL14
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
 import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import com.jormy.nin.EXSurfaceView
+import com.jormy.nin.NINLib
 import com.jormy.nin.NINLib.init
 import com.jormy.nin.NINLib.onTouchEvent
 import com.jormy.nin.NINLib.step
@@ -52,6 +54,8 @@ class NINView(context: Context) : EXSurfaceView(context) {
         setEGLContextFactory(globalContextFactory)
         setEGLConfigChooser(ConfigChooser(8, 8, 8, 8, 0, 0))
         setRenderer(Renderer())
+        // Frames are requested on demand (see wake()); the engine is emulated, so idle frames are not free.
+        renderMode = 0 // when dirty (1 = continuously)
         setPreserveEGLContextOnPause(true)
         globalView = this
         val metrics = resources.displayMetrics
@@ -215,7 +219,12 @@ class NINView(context: Context) : EXSurfaceView(context) {
                 )
             )
         }
-        globalView.requestRender()
+        pointersDown = when (actionId) {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 0
+            MotionEvent.ACTION_POINTER_UP -> pointerCount - 1
+            else -> pointerCount
+        }
+        wake()
         return true
     }
 
@@ -280,6 +289,7 @@ class NINView(context: Context) : EXSurfaceView(context) {
                 } else {
                     SoftKeyboard.keyboard?.relayDelayedEvents()
                     step()
+                    scheduleNextFrame()
                     return
                 }
             }
@@ -291,10 +301,12 @@ class NINView(context: Context) : EXSurfaceView(context) {
             val widthPixels = metrics.widthPixels
             val heightPixels = metrics.heightPixels
             init(width, height, widthPixels, heightPixels)
+            wake()
         }
 
         override fun onSurfaceCreated(gl10: GL10, config: EGLConfig) {
             syncTiming(System.currentTimeMillis())
+            wake()
         }
     }
 
@@ -344,14 +356,81 @@ class NINView(context: Context) : EXSurfaceView(context) {
         }
 
 
+        /** Keep rendering while a finger is down or until this uptime (ms). */
+        @Volatile
+        var pointersDown = 0
+
+        @Volatile
+        private var activeUntil = 0L
+
+        // How long to keep stepping the engine after activity: covers its timers (autospace,
+        // long-press menus, key repeat) and settling animations.
+        private const val ACTIVE_GRACE_MS = 1500L
+
+        fun wake(graceMs: Long = ACTIVE_GRACE_MS) {
+            val until = SystemClock.uptimeMillis() + graceMs
+            if (until > activeUntil) activeUntil = until
+            if (::globalView.isInitialized) globalView.requestRender()
+        }
+
+        private var frameChangedSupported = true
+        // Keep rendering while frames keep changing (animations change every frame); a one-off change,
+        // such as the engine toggling a caret twice a second, only costs a few frames.
+        private const val SETTLE_FRAMES = 3
+        private var unchangedFrames = 0
+
+        // While idle, still step the engine a few times a second so its own timers (fades that start
+        // later, autosave, ...) keep running; if a heartbeat frame changes, rendering continues.
+        private const val IDLE_HEARTBEAT_MS = 250L
+        private val heartbeatHandler by lazy { Handler(Looper.getMainLooper()) }
+        private val heartbeat = Runnable { if (::globalView.isInitialized) globalView.requestRender() }
+
+        private var statFrames = 0
+        private var statChanged = 0
+        private var statSince = 0L
+
+        /** Called on the GL thread after each step(): request another frame only if one is needed. */
+        fun scheduleNextFrame() {
+            val now = SystemClock.uptimeMillis()
+            val changed = if (frameChangedSupported) {
+                try {
+                    NINLib.frameChanged()
+                } catch (e: UnsatisfiedLinkError) {
+                    frameChangedSupported = false // original 32-bit library: render continuously
+                    true
+                }
+            } else {
+                true
+            }
+            unchangedFrames = if (changed) 0 else unchangedFrames + 1
+            if (BuildConfig.DEBUG) {
+                statFrames++
+                if (changed) statChanged++
+                if (now - statSince >= 5000) {
+                    Log.d(TAG, "render: $statFrames frames ($statChanged changed) in ${now - statSince} ms")
+                    statFrames = 0
+                    statChanged = 0
+                    statSince = now
+                }
+            }
+            val again = !frameChangedSupported || pointersDown > 0 || now < activeUntil || unchangedFrames < SETTLE_FRAMES
+            if (again) {
+                globalView.requestRender()
+            } else {
+                heartbeatHandler.removeCallbacks(heartbeat)
+                heartbeatHandler.postDelayed(heartbeat, IDLE_HEARTBEAT_MS)
+            }
+        }
+
         fun onRoenSignalDirty() {
-            globalView.requestRender()
+            // Raised from inside step() on nearly every frame, so it says nothing about whether the
+            // picture changed; scheduleNextFrame() uses the bridge's frame fingerprint instead.
         }
 
 
         fun onRoenFrozennessChange(truth: Boolean) {
             if (!truth) {
-                globalView.requestRender()
+                wake()
             }
         }
 

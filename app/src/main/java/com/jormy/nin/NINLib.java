@@ -47,6 +47,12 @@ public class NINLib {
     @Api
     public static native long syncTiming(long j);
 
+    /**
+     * Whether the frame just rendered differed from the previous one. Implemented by the 64-bit
+     * bridge only; the original 32-bit library does not have it (UnsatisfiedLinkError).
+     */
+    public static native boolean frameChanged();
+
     static {
         System.loadLibrary("gl2jni");
     }

@@ -10,6 +10,8 @@
 #include <string>
 #include <utility>
 
+extern int g_frame_no_for_trace;
+
 namespace {
 
 struct Obj {
@@ -96,6 +98,9 @@ jvalue dispatch(jmethodID mid, const jvalue* a) {
             ++p;
         }
         *g_ops += op + "\n";
+    } else if (m->cls == "com/jormy/nin/NINView" && getenv("NB_TRACE_VIEW")) {
+        fprintf(stderr, "VIEW frame=%d %s%s\n", g_frame_no_for_trace, m->name.c_str(),
+                m->sig == "(Z)V" ? (a[0].z ? " true" : " false") : "");
     } else if (m->sig.back() != 'V') {
         fprintf(stderr, "fake JNI: unhandled non-void upcall %s%s\n", full.c_str(), m->sig.c_str());
     }
