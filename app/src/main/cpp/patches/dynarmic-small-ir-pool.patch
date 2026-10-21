@@ -1,0 +1,13 @@
+diff --git a/src/dynarmic/ir/basic_block.cpp b/src/dynarmic/ir/basic_block.cpp
+index cc7eb48e..fa4bf6ef 100644
+--- a/src/dynarmic/ir/basic_block.cpp
++++ b/src/dynarmic/ir/basic_block.cpp
+@@ -22,7 +22,7 @@
+ namespace Dynarmic::IR {
+ 
+ Block::Block(const LocationDescriptor& location)
+-        : location{location}, end_location{location}, cond{Cond::AL}, instruction_alloc_pool{std::make_unique<Common::Pool>(sizeof(Inst), 4096)} {}
++        : location{location}, end_location{location}, cond{Cond::AL}, instruction_alloc_pool{std::make_unique<Common::Pool>(sizeof(Inst), 256)} {}
+ 
+ Block::~Block() = default;
+ 

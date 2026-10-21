@@ -2,6 +2,8 @@
 // inside the guest library, translating references and packing arguments per the ARM AAPCS.
 #include <jni.h>
 
+#include <ctime>
+
 #include "jni_bridge.h"
 #include "nb.h"
 
@@ -22,6 +24,28 @@ gaddr need(const char* name) {
     const GArg gcls = ga(jni_local(cls));
 
 GArg str(jstring s) { return ga(jni_local(s)); }
+
+double now_ms() {
+    timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
+}
+
+// Logs how long the guest spends per frame (and in touch handling), every ~5 s.
+struct FrameStats {
+    double start = now_ms(), total = 0, worst = 0, touch = 0;
+    int frames = 0, touches = 0;
+    void frame(double ms) {
+        total += ms;
+        worst = ms > worst ? ms : worst;
+        ++frames;
+        double t = now_ms();
+        if (t - start < 5000) return;
+        NB_LOGI("perf: %d frames in %.1f s, step avg %.2f ms, max %.2f ms; %d touches avg %.2f ms", frames,
+                (t - start) / 1e3, total / frames, worst, touches, touches ? touch / touches : 0.0);
+        *this = {};
+    }
+} g_stats;
 
 }  // namespace
 
@@ -82,8 +106,11 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_onTextSelection(JNIEnv* env, jc
 JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_onTouchEvent(JNIEnv* env, jclass cls, jint id, jint action, jfloat x,
                                                              jfloat y, jfloat pressure, jfloat area, jlong ts) {
     GUEST_FN(Java_com_jormy_nin_NINLib_onTouchEvent)
+    double t0 = now_ms();
     call_guest(fn, {genv, gcls, ga(u32(id)), ga(u32(action)), gaf(x), gaf(y), gaf(pressure), gaf(area),
                     ga64(u64(ts))});
+    g_stats.touch += now_ms() - t0;
+    ++g_stats.touches;
 }
 
 JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_onWordDestruction(JNIEnv* env, jclass cls, jstring a, jstring b) {
@@ -111,7 +138,9 @@ JNIEXPORT jlong JNICALL Java_com_jormy_nin_NINLib_processSoftKeyboardCursorMovem
 
 JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_step(JNIEnv* env, jclass cls) {
     GUEST_FN(Java_com_jormy_nin_NINLib_step)
+    double t0 = now_ms();
     call_guest(fn, {genv, gcls});
+    g_stats.frame(now_ms() - t0);
 }
 
 JNIEXPORT jlong JNICALL Java_com_jormy_nin_NINLib_syncTiming(JNIEnv* env, jclass cls, jlong t) {

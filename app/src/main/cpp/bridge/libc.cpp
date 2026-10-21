@@ -608,10 +608,17 @@ void x_open(Ctx& c) {
     int mode = int(c.a32());
     c.ret(u32(sysret(open(path, oflags_from_guest(flags) | O_CLOEXEC, mode))));
 }
-int x_close(int fd) { return sysret(close(fd)); }
-s32 x_read(int fd, void* buf, u32 n) { return s32(sysret(read(fd, buf, n))); }
+int x_close(int fd) {
+    if (vfd_is(fd)) return vfd_close(fd);
+    return sysret(close(fd));
+}
+s32 x_read(int fd, void* buf, u32 n) {
+    if (vfd_is(fd)) return vfd_read(fd, buf, n);
+    return s32(sysret(read(fd, buf, n)));
+}
 s32 x_write(int fd, const void* buf, u32 n) { return s32(sysret(write(fd, buf, n))); }
 s32 x_lseek(int fd, s32 off, int whence) {
+    if (vfd_is(fd)) return s32(vfd_lseek(fd, off, whence));
     off_t r = lseek(fd, off, whence);
     if (r == -1) {
         errno_from_host();
@@ -700,6 +707,14 @@ int x_lstat(const char* p, u32 out) {
 }
 int x_fstat(int fd, u32 out) {
     struct stat s;
+    if (vfd_is(fd)) {
+        s = {};
+        s.st_mode = S_IFREG | 0444;
+        s.st_size = vfd_size(fd);
+        s.st_blksize = 4096;
+        stat_to_guest(out, s);
+        return 0;
+    }
     if (fstat(fd, &s)) return sysret(-1);
     stat_to_guest(out, s);
     return 0;
@@ -765,6 +780,10 @@ void x_fcntl(Ctx& c) {
     int cmd = int(c.a32());
     u32 arg = c.a32();
     int r;
+    if (vfd_is(fd)) {
+        c.ret(cmd == F_GETFL ? u32(O_RDONLY) : 0);
+        return;
+    }
     switch (cmd) {
     case F_GETFL:
         r = fcntl(fd, F_GETFL);
@@ -828,6 +847,17 @@ void x_ioctl(Ctx& c) {
     int fd = int(c.a32());
     u32 req = c.a32();
     u32 arg = c.a32();
+    if (vfd_is(fd)) {
+        if (req == 0x541B) {
+            s64 pos = vfd_lseek(fd, 0, SEEK_CUR);
+            wr<s32>(arg, s32(vfd_size(fd)) - s32(pos));
+            c.ret(0);
+        } else {
+            set_guest_errno(ENOTTY);
+            c.ret(u32(-1));
+        }
+        return;
+    }
     switch (req) {
     case 0x541B:  // FIONREAD
     case 0x5421:  // FIONBIO

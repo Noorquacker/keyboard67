@@ -52,10 +52,32 @@ and box86 work:
   translation. A real arm64 phone runs the JIT output natively.
 - [ ] Real arm64 phone (no device was available).
 
+## Performance (Pixel 9a, Android 17)
+
+Profiled with `simpleperf` on device; fixes so far:
+
+| Fix | Effect |
+|---|---|
+| Native code built `-O2` even in debug APKs (`CMakeLists.txt`) | dynarmic at `-O0` was the biggest cost |
+| PLT entries rewritten to direct branches at load (`loader.cpp`) | dynarmic's arm64 backend has no fast dispatch, so every PLT call went through a C++ hash lookup |
+| dynarmic patch: 16 KB instead of 256 KB IR pool per block (`patches/`) | each compiled block was doing an `mmap`/`munmap` round trip in scudo |
+| `/proc/self/stat` served from a 250 ms snapshot via a virtual fd (`stdio.cpp`) | the engine reads it ~30 times per frame |
+| Lock-free SVC dispatch (`cpu.cpp`) | one mutex per import call removed |
+| dynarmic patch: optional code-range index, disabled | saves host heap; the guest never modifies its code |
+
+Cold start went from ~40 s to ~2.5 s. Warm typing costs ~11 ms of engine time per touch, and
+frames average 6–8 ms. The first word after a fresh start is ~40–50 ms per touch while the JIT
+compiles. `ninbridge: perf:` lines in logcat report frame and touch timings every 5 s.
+
+Still open: ~330 MB of host heap is dynarmic per-block metadata (linking and fastmem fault
+recovery for ~100k+ blocks). The renderer runs continuously (`EXSurfaceView` render mode 1) even
+when idle, as in the original.
+
 ## Building
 
 - NDK r27+ (`nin.ndkPath=...` in `local.properties`, or install NDK 27.2.12479018 in the SDK).
-- `git submodule update --init --recursive` (dynarmic and its externals).
+- `git submodule update --init --recursive` (dynarmic and its externals). CMake applies the
+  patches in `app/src/main/cpp/patches/` to the dynarmic checkout, so it shows as modified.
 - Boost headers: found in `/usr/include` if installed, otherwise downloaded once into
   `app/src/main/cpp/.deps`.
 - Gradle 8.0 needs JDK 17 (Kotlin 1.8 cannot target JVM 21).

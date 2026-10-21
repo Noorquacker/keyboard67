@@ -17,6 +17,9 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# The JIT is far too slow unoptimized, so debug builds (e.g. Gradle assembleDebug) still use -O2.
+set(CMAKE_C_FLAGS_DEBUG "-O2 -g")
+set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g")
 
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -25,6 +28,21 @@ set(DYNARMIC_FRONTENDS "A32" CACHE STRING "" FORCE)
 set(DYNARMIC_USE_BUNDLED_EXTERNALS ON CACHE BOOL "" FORCE)
 set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 set(DYNARMIC_USE_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
+# Local fixes to dynarmic, applied to the submodule checkout (idempotent).
+foreach(patch dynarmic-small-ir-pool.patch dynarmic-optional-range-tracking.patch)
+    set(_p "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch}")
+    execute_process(COMMAND git apply --reverse --check "${_p}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dynarmic"
+        RESULT_VARIABLE _already OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _already EQUAL 0)
+        execute_process(COMMAND git apply "${_p}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dynarmic"
+            RESULT_VARIABLE _applied)
+        if(NOT _applied EQUAL 0)
+            message(FATAL_ERROR "failed to apply ${patch} to dynarmic")
+        endif()
+    endif()
+endforeach()
 add_subdirectory(third_party/dynarmic EXCLUDE_FROM_ALL)
 
 configure_file(bridge/guest_image.S.in "${CMAKE_CURRENT_BINARY_DIR}/guest_image.S" @ONLY)

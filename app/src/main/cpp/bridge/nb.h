@@ -231,6 +231,15 @@ constexpr u32 kSize = 0x1000;
 
 void set_guest_errno(int e);
 
+// Virtual file descriptors: in-memory files with fd numbers the kernel never handed out.
+constexpr int kVfdBase = 32000, kVfdCount = 256;
+inline bool vfd_is(int fd) { return fd >= kVfdBase && fd < kVfdBase + kVfdCount; }
+int vfd_create(std::string data);  // -1 when full
+s32 vfd_read(int fd, void* buf, u32 n);
+s64 vfd_lseek(int fd, s64 off, int whence);
+u32 vfd_size(int fd);
+int vfd_close(int fd);
+
 // Headless test builds substitute host-dependent files (e.g. /proc/self/stat) with fixed ones.
 #ifdef NB_HEADLESS
 const char* headless_path(const char* p);

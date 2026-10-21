@@ -57,6 +57,44 @@ gaddr resolve_import(const char* name) {
     return stub;
 }
 
+u32 arm_imm(u32 w) {  // ARM data-processing modified immediate
+    u32 rot = ((w >> 8) & 15) * 2, imm = w & 0xff;
+    return rot ? (imm >> rot) | (imm << (32 - rot)) : imm;
+}
+
+// Every call into an exported function goes through the PLT ("ldr pc, [ip, #n]!"), an indirect
+// branch that dynarmic's arm64 backend can only resolve through a C++ hash lookup. Once the GOT
+// is relocated the targets are fixed, so rewrite each entry into a direct "b target" that the
+// JIT can link block-to-block.
+void patch_plt(const u8* img, size_t size, gaddr base) {
+    auto* eh = reinterpret_cast<const Elf32_Ehdr*>(img);
+    if (!eh->e_shoff || eh->e_shoff + size_t(eh->e_shnum) * sizeof(Elf32_Shdr) > size) return;
+    auto* sh = reinterpret_cast<const Elf32_Shdr*>(img + eh->e_shoff);
+    const char* names = reinterpret_cast<const char*>(img + sh[eh->e_shstrndx].sh_offset);
+    for (int i = 0; i < eh->e_shnum; ++i) {
+        if (strcmp(names + sh[i].sh_name, ".plt") != 0) continue;
+        gaddr start = base + sh[i].sh_addr, end = start + sh[i].sh_size;
+        u32 patched = 0, skipped = 0;
+        for (gaddr a = start; a + 12 <= end; a += 4) {
+            u32 w0 = rd<u32>(a), w1 = rd<u32>(a + 4), w2 = rd<u32>(a + 8);
+            // add ip, pc, #i0 ; add ip, ip, #i1 ; ldr pc, [ip, #i2]!
+            if ((w0 & 0xfffff000) != 0xe28fc000 || (w1 & 0xfffff000) != 0xe28cc000 || (w2 & 0xfffff000) != 0xe5bcf000)
+                continue;
+            gaddr got = a + 8 + arm_imm(w0) + arm_imm(w1) + (w2 & 0xfff);
+            gaddr target = rd<u32>(got);
+            s64 off = (s64(target) - s64(a + 8)) / 4;
+            if ((target & 3) || off < -(1 << 23) || off >= (1 << 23)) {
+                ++skipped;
+                continue;
+            }
+            wr<u32>(a, 0xea000000u | (u32(off) & 0xffffff));
+            ++patched;
+            a += 8;
+        }
+        NB_LOGI("PLT: %u entries turned into direct branches (%u left indirect)", patched, skipped);
+    }
+}
+
 void load_image(const u8* img, size_t size, gaddr base) {
     auto* eh = reinterpret_cast<const Elf32_Ehdr*>(img);
     if (size < sizeof(Elf32_Ehdr) || memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0 || eh->e_ident[EI_CLASS] != ELFCLASS32 ||
@@ -142,6 +180,7 @@ void load_image(const u8* img, size_t size, gaddr base) {
     };
     apply(rel, relsz);
     apply(jmprel, pltrelsz);
+    patch_plt(img, size, base);
     NB_LOGI("guest library loaded at %#x (%u bytes, %zu exports, %zu stubs)", base, L.image_size, L.exports.size(),
             g_stub_cache.size());
 

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <malloc.h>
 
 extern "C" {
 int64_t nb_fake_time_us = 1700000000LL * 1000000;
@@ -65,10 +66,12 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IOLBF, 0);
 
     JNI_OnLoad(fake_jni_vm(), nullptr);
+    printf("host heap after load: %.1f MB\n", mallinfo().uordblks / 1048576.0);
     Java_com_jormy_nin_NINLib_syncTiming(env, cls, now_ms());
     Java_com_jormy_nin_NINLib_init(env, cls, 1080, 760, 1080, 2340);
     uint64_t c, d;
     printf("init  gl=%016" PRIx64 "\n", fakegl_take_hash(&c, &d));
+    printf("host heap after init: %.1f MB\n", mallinfo().uordblks / 1048576.0);
     Java_com_jormy_nin_NINLib_onChangeAppOrTextbox(env, cls, fake_jni_string("com.example.notes"),
                                                    fake_jni_string("body"), fake_jni_string("text"));
     Java_com_jormy_nin_NINLib_onTextSelection(env, cls, fake_jni_string("Hello "), fake_jni_string(""),
@@ -87,6 +90,7 @@ int main(int argc, char** argv) {
            Java_com_jormy_nin_NINLib_getUnicodeBackIndex(env, cls, fake_jni_string("hello"), 3),
            int64_t(Java_com_jormy_nin_NINLib_processSoftKeyboardCursorMovementLeft(env, cls,
                                                                                   fake_jni_string("hello world"))));
+    printf("host heap in use: %.1f MB\n", mallinfo().uordblks / 1048576.0);
     printf("ops:\n%s", ops.c_str());
     return 0;
 }

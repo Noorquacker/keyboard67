@@ -1,9 +1,11 @@
 // stdio for the guest: FILE handles, printf and scanf families.
+#include <fcntl.h>
 #include <unistd.h>
 #include <wchar.h>
 
 #include <cerrno>
 #include <cstdio>
+#include <ctime>
 #include <mutex>
 #include <unordered_map>
 
@@ -36,11 +38,77 @@ GFile* lookup(gaddr gf) {
     return it == g_files.end() ? nullptr : it->second;
 }
 
-gaddr wrap_file(FILE* f) {
+gaddr wrap_file(FILE* f, GFile* gfile = nullptr) {
     gaddr gf = gcalloc(1, kFileSize);
     wr<s16>(gf + 14, s16(fileno(f)));
+    if (!gfile) gfile = new GFile;
+    gfile->f = f;
     std::lock_guard lk(g_files_mu);
-    g_files[gf] = new GFile{f, 0, {}};
+    g_files[gf] = gfile;
+    return gf;
+}
+
+struct Vfd {
+    bool used = false;
+    std::string data;
+    u64 pos = 0;
+};
+std::mutex g_vfd_mu;
+Vfd g_vfds[kVfdCount];
+
+#ifdef __BIONIC__
+int vf_read(void* c, char* b, int n) { return vfd_read(int(intptr_t(c)), b, u32(n)); }
+fpos_t vf_seek(void* c, fpos_t off, int whence) { return fpos_t(vfd_lseek(int(intptr_t(c)), off, whence)); }
+int vf_close(void* c) { return vfd_close(int(intptr_t(c))); }
+FILE* vfd_fdopen(int fd) { return funopen(reinterpret_cast<void*>(intptr_t(fd)), vf_read, nullptr, vf_seek, vf_close); }
+#else
+ssize_t vf_read(void* c, char* b, size_t n) { return vfd_read(int(intptr_t(c)), b, u32(n)); }
+int vf_seek(void* c, off64_t* off, int whence) {
+    s64 r = vfd_lseek(int(intptr_t(c)), *off, whence);
+    if (r < 0) return -1;
+    *off = r;
+    return 0;
+}
+int vf_close(void* c) { return vfd_close(int(intptr_t(c))); }
+FILE* vfd_fdopen(int fd) {
+    cookie_io_functions_t io{vf_read, nullptr, vf_seek, vf_close};
+    return fopencookie(reinterpret_cast<void*>(intptr_t(fd)), "r", io);
+}
+#endif
+
+// The engine's memory tracker re-reads /proc/self/stat ~30 times per frame. Serve it from a
+// snapshot (refreshed every 250 ms) through a virtual descriptor: no syscalls per read, and
+// libstdc++'s filebuf, which reads via fileno(), still gets a descriptor it can read().
+gaddr open_proc_stat_snapshot(const char* path) {
+    static std::mutex mu;
+    static std::string snap;
+    static timespec taken{};
+    std::string copy;
+    {
+        std::lock_guard lk(mu);
+        timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (snap.empty() || (now.tv_sec - taken.tv_sec) * 1000 + (now.tv_nsec - taken.tv_nsec) / 1000000 > 250) {
+            int src = open(headless_path(path), O_RDONLY | O_CLOEXEC);
+            if (src < 0) return 0;
+            char buf[1024];
+            ssize_t n = read(src, buf, sizeof buf);
+            close(src);
+            if (n <= 0) return 0;
+            snap.assign(buf, size_t(n));
+            taken = now;
+        }
+        copy = snap;
+    }
+    int fd = vfd_create(std::move(copy));
+    if (fd < 0) return 0;
+    FILE* f = vfd_fdopen(fd);
+    if (!f) {
+        vfd_close(fd);
+        return 0;
+    }
+    gaddr gf = wrap_file(f);
+    wr<s16>(gf + 14, s16(fd));  // what the guest's fileno() macro returns
     return gf;
 }
 
@@ -124,6 +192,46 @@ Len parse_len(const char*& p) {
 }
 
 }  // namespace
+
+int vfd_create(std::string data) {
+    std::lock_guard lk(g_vfd_mu);
+    for (int i = 0; i < kVfdCount; ++i) {
+        if (g_vfds[i].used) continue;
+        g_vfds[i] = {true, std::move(data), 0};
+        return kVfdBase + i;
+    }
+    return -1;
+}
+s32 vfd_read(int fd, void* buf, u32 n) {
+    std::lock_guard lk(g_vfd_mu);
+    Vfd& v = g_vfds[fd - kVfdBase];
+    if (!v.used) return -1;
+    u64 left = v.pos < v.data.size() ? v.data.size() - v.pos : 0;
+    u32 k = u32(n < left ? n : left);
+    memcpy(buf, v.data.data() + v.pos, k);
+    v.pos += k;
+    return s32(k);
+}
+s64 vfd_lseek(int fd, s64 off, int whence) {
+    std::lock_guard lk(g_vfd_mu);
+    Vfd& v = g_vfds[fd - kVfdBase];
+    if (!v.used) return -1;
+    s64 base = whence == SEEK_SET ? 0 : whence == SEEK_CUR ? s64(v.pos) : s64(v.data.size());
+    if (base + off < 0) return -1;
+    v.pos = u64(base + off);
+    return s64(v.pos);
+}
+u32 vfd_size(int fd) {
+    std::lock_guard lk(g_vfd_mu);
+    return u32(g_vfds[fd - kVfdBase].data.size());
+}
+int vfd_close(int fd) {
+    std::lock_guard lk(g_vfd_mu);
+    Vfd& v = g_vfds[fd - kVfdBase];
+    if (!v.used) return -1;
+    v = {};
+    return 0;
+}
 
 std::string gformat(const char* fmt, ArgSrc& a) {
     std::string out;
@@ -368,6 +476,9 @@ namespace {
 // ------------------------------------------------------------------ FILE functions
 
 u32 x_fopen(const char* path, const char* mode) {
+    if (strcmp(path, "/proc/self/stat") == 0 && mode[0] == 'r' && !strchr(mode, '+')) {
+        if (gaddr gf = open_proc_stat_snapshot(path)) return gf;
+    }
     FILE* f = fopen(headless_path(path), mode);
     if (!f) {
         errno_from_host();

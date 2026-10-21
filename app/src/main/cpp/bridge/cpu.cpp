@@ -48,7 +48,10 @@ struct Import {
 };
 
 std::mutex g_reg_mu;
-std::vector<Import> g_handlers;  // index = svc number - kSvcThunkBase
+// index = svc number - kSvcThunkBase. Fixed-size so CallSVC can read it without locking.
+constexpr u32 kMaxStubs = 4096;
+Import g_handlers[kMaxStubs];
+std::atomic<u32> g_handler_count{0};
 std::unordered_map<std::string, Handler> g_by_name;
 std::unordered_map<std::string, gaddr> g_data;
 
@@ -84,10 +87,11 @@ gaddr make_stub(const char* name, Handler fn) {
     u32 idx;
     {
         std::lock_guard lk(g_reg_mu);
-        idx = u32(g_handlers.size());
-        g_handlers.push_back({name, fn});
+        idx = g_handler_count.load(std::memory_order_relaxed);
+        if (idx >= kMaxStubs) fatal("too many stubs");
+        g_handlers[idx] = {name, fn};
+        g_handler_count.store(idx + 1, std::memory_order_release);
     }
-    if (idx >= 0xFFFFFF - kSvcThunkBase) fatal("too many stubs");
     gaddr a = misc_alloc(8, 8);
     wr<u32>(a, kArmSvc | (kSvcThunkBase + idx));
     wr<u32>(a + 4, kArmBxLr);
@@ -174,6 +178,8 @@ Cpu::Cpu(GuestThread* t, int depth) : thread(t), depth(depth), pid(alloc_pid()) 
     cfg.arch_version = Dynarmic::A32::ArchVersion::v7;
     cfg.fastmem_pointer = reinterpret_cast<uintptr_t>(g_base);
     cfg.enable_cycle_counting = false;
+    // The guest never modifies its own code, and the range index costs ~100+ MB of host heap.
+    cfg.track_code_ranges = false;
     // Every thread has its own JIT (dynarmic is not re-entrant); nested ones run little code.
     cfg.code_cache_size = depth == 0 ? 128u * 1024 * 1024 : 16u * 1024 * 1024;
     cfg.coprocessors[15] = std::make_shared<Cp15>(&tls_word);
@@ -292,12 +298,8 @@ void Cpu::CallSVC(u32 swi) {
     auto& r = jit->Regs();
     if (swi >= kSvcThunkBase) {
         u32 idx = swi - kSvcThunkBase;
-        const Import* imp;
-        {
-            std::lock_guard lk(g_reg_mu);
-            if (idx >= g_handlers.size()) fatal("bad thunk svc %#x", swi);
-            imp = &g_handlers[idx];
-        }
+        if (idx >= g_handler_count.load(std::memory_order_acquire)) fatal("bad thunk svc %#x", swi);
+        const Import* imp = &g_handlers[idx];
         Ctx c(*this, imp->name.c_str());
         imp->fn(c);
         return;
