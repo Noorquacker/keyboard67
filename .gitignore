@@ -176,3 +176,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# ninbridge
+app/src/main/cpp/.deps/

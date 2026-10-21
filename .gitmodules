@@ -1,0 +1,3 @@
+[submodule "app/src/main/cpp/third_party/dynarmic"]
+	path = app/src/main/cpp/third_party/dynarmic
+	url = https://github.com/azahar-emu/dynarmic
