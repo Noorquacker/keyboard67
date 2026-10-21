@@ -171,6 +171,14 @@ void load_image(const u8* img, size_t size, gaddr base) {
         if (resolved[i] != ~0u) return resolved[i];
         const Elf32_Sym* s = sym(i);
         gaddr a = s->st_shndx != SHN_UNDEF ? base + s->st_value : resolve_import(hs(strtab + s->st_name));
+        if (s->st_shndx != SHN_UNDEF && ELF32_ST_TYPE(s->st_info) == STT_GNU_IFUNC) {
+            // The symbol's value is a resolver returning the real implementation (here: the
+            // __atomic_* helpers behind libstdc++'s string refcounts). Binding the resolver itself
+            // made every atomic op return a function pointer, so no string was ever freed.
+            gaddr impl = gaddr(call_guest(a, {}));
+            NB_LOGI("ifunc %s resolved to %#x", hs(strtab + s->st_name), impl);
+            a = impl;
+        }
         return resolved[i] = a;
     };
 

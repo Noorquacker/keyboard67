@@ -17,6 +17,8 @@ jclass fake_jni_class(const char* name);
 jstring fake_jni_string(const char* s);
 uint64_t fakegl_take_hash(uint64_t* calls, uint64_t* draws);
 void fakegl_trace(FILE* f);
+unsigned nb_guest_heap_used_kb();
+void heap_report_c();
 
 jint JNI_OnLoad(JavaVM*, void*);
 void Java_com_jormy_nin_NINLib_init(JNIEnv*, jclass, jint, jint, jint, jint);
@@ -91,11 +93,25 @@ int main(int argc, char** argv) {
                     if (rows[r][i] == *p) tap((geom[r][0] + i * geom[r][1]) * 1080, geom[r][2] * 760);
     }
     for (int i = 0; i < extra; ++i) frame();
+    // Leak check: keep typing and report guest heap growth.
+    int rounds = getenv("NB_LEAK_ROUNDS") ? atoi(getenv("NB_LEAK_ROUNDS")) : 0;
+    for (int r = 0; r < rounds; ++r) {
+        for (const char* p = "helloworld"; *p; ++p)
+            for (int rr = 0; rr < 3; ++rr)
+                for (int i = 0; rows[rr][i]; ++i)
+                    if (rows[rr][i] == *p) tap((geom[rr][0] + i * geom[rr][1]) * 1080, geom[rr][2] * 760);
+        if (r % 10 == 9) {
+            printf("leak round %d guest heap %u KB\n", r + 1, nb_guest_heap_used_kb());
+            fprintf(stderr, "REPORT round %d\n", r + 1);
+            heap_report_c();
+        }
+    }
     printf("backIndex=%d cursorLeft=%" PRId64 "\n",
            Java_com_jormy_nin_NINLib_getUnicodeBackIndex(env, cls, fake_jni_string("hello"), 3),
            int64_t(Java_com_jormy_nin_NINLib_processSoftKeyboardCursorMovementLeft(env, cls,
                                                                                   fake_jni_string("hello world"))));
     printf("host heap in use: %.1f MB\n", mallinfo().uordblks / 1048576.0);
+    heap_report_c();
     printf("ops:\n%s", ops.c_str());
     return 0;
 }

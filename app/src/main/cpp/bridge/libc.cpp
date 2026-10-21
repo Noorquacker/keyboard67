@@ -233,10 +233,50 @@ void make_ctype_tables() {
 
 // ------------------------------------------------------------------ stdlib
 
+#ifdef NB_HEADLESS
+// Leak hunting: tag each guest malloc with the guest return address, plus the next code address on
+// the stack (the caller of operator new, typically).
+u64 guest_tag(Ctx& c) {
+    u32 caller = 0;
+    for (gaddr p = c.r[13]; p < c.r[13] + 96; p += 4) {
+        u32 v = rd<u32>(p);
+        if (guest_is_code(v) && v != c.r[14]) {
+            caller = v;
+            break;
+        }
+    }
+    return (u64(caller) << 32) | c.r[14] | 0x80000000u;
+}
+void x_malloc(Ctx& c) {
+    u32 n = c.a32();
+    gaddr p = gmalloc(n);
+    heap_track(p, n, guest_tag(c));
+    c.ret(p);
+}
+void x_calloc(Ctx& c) {
+    u32 n = c.a32(), sz = c.a32();
+    gaddr p = gcalloc(n, sz);
+    heap_track(p, n * sz, guest_tag(c));
+    c.ret(p);
+}
+void x_realloc(Ctx& c) {
+    u32 old = c.a32(), n = c.a32();
+    heap_untrack(old);
+    gaddr p = grealloc(old, n);
+    heap_track(p, n, guest_tag(c));
+    c.ret(p);
+}
+void x_free(Ctx& c) {
+    u32 p = c.a32();
+    heap_untrack(p);
+    gfree(p);
+}
+#else
 u32 x_malloc(u32 n) { return gmalloc(n); }
 u32 x_calloc(u32 n, u32 s) { return gcalloc(n, s); }
 u32 x_realloc(u32 p, u32 n) { return grealloc(p, n); }
 void x_free(u32 p) { gfree(p); }
+#endif
 
 int x_atoi(const char* s) { return int(strtol(s, nullptr, 10)); }
 
@@ -1267,10 +1307,17 @@ void register_libc() {
     NB_REG("toupper", x_toupper);
     make_ctype_tables();
 
+#ifdef NB_HEADLESS
+    reg("malloc", x_malloc);
+    reg("calloc", x_calloc);
+    reg("realloc", x_realloc);
+    reg("free", x_free);
+#else
     NB_REG("malloc", x_malloc);
     NB_REG("calloc", x_calloc);
     NB_REG("realloc", x_realloc);
     NB_REG("free", x_free);
+#endif
     NB_REG("atoi", x_atoi);
     NB_REG("atol", x_atoi);
     NB_REG("strtol", x_strtol);

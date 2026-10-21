@@ -84,6 +84,16 @@ timers, e.g. autospace), and while frames keep changing. Otherwise it only steps
 frame, so it is useless for this. Idle GL-thread CPU went from ~50% to ~4%. On 32-bit devices
 (original library, no `frameChanged`) the view stays continuous.
 
+## Fixed: memory leak and crash after a few minutes of typing
+
+The guest library has two `STT_GNU_IFUNC` symbols (`__atomic_fetch_add_4`, `__atomic_add_fetch_4`),
+whose values are resolver functions. The loader bound the resolvers themselves, so every atomic
+decrement of a libstdc++ string refcount returned a pointer instead of the old count, and no string
+was ever freed (~400 KB per keystroke, guest heap exhausted after ~10 minutes, then a crash on a
+failed allocation). `loader.cpp` now calls IFUNC resolvers during relocation. The guest heap size is
+in logcat's `ninbridge: perf:` lines. Headless builds track live guest allocations per call site
+(`NB_LEAK_ROUNDS=<n>` keeps typing and prints the top allocators).
+
 ## Known issues
 
 - **Black keyboard after a phone call** (also on the original app and old phones). After the call

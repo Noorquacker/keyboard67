@@ -417,3 +417,5 @@ void glVertexAttribPointer(GLuint i, GLint size, GLenum type, GLboolean norm, GL
 void glViewport(GLint x, GLint y, GLsizei w, GLsizei h) { rec("Viewport", x, y, w, h); }
 
 }  // extern "C"
+namespace nb { void heap_report(); }
+extern "C" void heap_report_c() { nb::heap_report(); }

@@ -41,8 +41,9 @@ struct FrameStats {
         ++frames;
         double t = now_ms();
         if (t - start < 5000) return;
-        NB_LOGI("perf: %d frames in %.1f s, step avg %.2f ms, max %.2f ms; %d touches avg %.2f ms", frames,
-                (t - start) / 1e3, total / frames, worst, touches, touches ? touch / touches : 0.0);
+        NB_LOGI("perf: %d frames in %.1f s, step avg %.2f ms, max %.2f ms; %d touches avg %.2f ms; guest heap %u MB",
+                frames, (t - start) / 1e3, total / frames, worst, touches, touches ? touch / touches : 0.0,
+                guest_heap_used() >> 20);
         *this = {};
     }
 } g_stats;

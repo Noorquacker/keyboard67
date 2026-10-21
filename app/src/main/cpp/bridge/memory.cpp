@@ -2,7 +2,9 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <algorithm>
 #include <map>
+#include <string>
 #include <mutex>
 
 #include "nb.h"
@@ -156,13 +158,68 @@ void map_free(gaddr a, u32 size) {
 
 // ---------------------------------------------------------------- heap
 
-gaddr gmalloc(u32 n) { return g(nbg_malloc(n)); }
+u32 guest_heap_used() { return g_brk - layout::kHeapBase; }
+
+#ifdef NB_HEADLESS
+namespace {
+std::mutex g_track_mu;
+std::map<gaddr, std::pair<u32, u64>>* g_track;  // ptr -> (size, tag)
+thread_local int t_track_depth = 0;
+}  // namespace
+void heap_track(gaddr p, u32 n, u64 tag) {
+    if (!p) return;
+    std::lock_guard lk(g_track_mu);
+    if (!g_track) g_track = new std::map<gaddr, std::pair<u32, u64>>;
+    (*g_track)[p] = {n, tag};
+}
+void heap_untrack(gaddr p) {
+    if (!p) return;
+    std::lock_guard lk(g_track_mu);
+    if (g_track) g_track->erase(p);
+}
+void heap_report() {
+    std::map<u64, std::pair<u64, u64>> by;  // tag -> (bytes, count)
+    {
+        std::lock_guard lk(g_track_mu);
+        if (!g_track) return;
+        for (auto& [p, v] : *g_track) {
+            by[v.second].first += v.first;
+            by[v.second].second++;
+        }
+    }
+    std::vector<std::pair<u64, u64>> v;
+    for (auto& [tag, bc] : by) v.push_back({bc.first, tag});
+    std::sort(v.rbegin(), v.rend());
+    for (size_t i = 0; i < v.size() && i < 40; ++i) {
+        u64 tag = v[i].second;
+        std::string where = tag & 0x80000000u
+                                ? "guest " + symbolize(u32(tag & 0x7fffffffu)) + "  <-  " + symbolize(u32(tag >> 32))
+                                : "host " + std::to_string(tag);
+        NB_LOGI("live %8llu bytes in %6llu blocks from %s", (unsigned long long)v[i].first,
+                (unsigned long long)by[tag].second, where.c_str());
+    }
+}
+#define NB_TAG(p, n) (t_track_depth == 0 ? heap_track(p, n, reinterpret_cast<u64>(__builtin_return_address(0))) : void())
+#else
+#define NB_TAG(p, n) ((void)0)
+#endif
+
+gaddr gmalloc(u32 n) {
+    gaddr p = g(nbg_malloc(n));
+    NB_TAG(p, n);
+    return p;
+}
 gaddr gcalloc(u32 n, u32 sz) {
     if (sz && n > 0xffffffffu / sz) return 0;
-    return g(nbg_calloc(n, sz));
+    gaddr p = g(nbg_calloc(n, sz));
+    NB_TAG(p, n * sz);
+    return p;
 }
 gaddr grealloc(gaddr p, u32 n) { return g(nbg_realloc(h(p), n)); }
 void gfree(gaddr p) {
+#ifdef NB_HEADLESS
+    heap_untrack(p);
+#endif
     if (!p) return;
     if (p < layout::kHeapBase || p >= layout::kHeapEnd) {
         NB_LOGW("free() of non-heap pointer %#x ignored", p);
@@ -203,3 +260,5 @@ extern "C" void* nb_guest_sbrk(ptrdiff_t inc) {
 }
 
 extern "C" void nb_guest_heap_abort() { nb::fatal("guest heap corrupted (dlmalloc abort)"); }
+
+extern "C" unsigned nb_guest_heap_used_kb() { return nb::guest_heap_used() >> 10; }

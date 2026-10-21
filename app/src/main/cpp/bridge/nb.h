@@ -89,6 +89,12 @@ void map_free(gaddr a, u32 size);
 
 // guest heap (dlmalloc over a guest sbrk arena)
 gaddr gmalloc(u32 n);
+u32 guest_heap_used();  // bytes of the guest sbrk arena in use
+#ifdef NB_HEADLESS
+void heap_track(gaddr p, u32 n, u64 tag);
+void heap_untrack(gaddr p);
+void heap_report();
+#endif
 gaddr gcalloc(u32 n, u32 sz);
 gaddr grealloc(gaddr p, u32 n);
 void gfree(gaddr p);
