@@ -18,7 +18,7 @@
             </intent-filter>
         </activity>
         <activity
-                android:name="com.lurebat.keyboard71.tasker.KeyboardActionActivity"
+                android:name="com.nqind.keyboard67.tasker.KeyboardActionActivity"
                 android:exported="true"
                 android:icon="@mipmap/ic_launcher"
                 android:label="Keyboard Action Activity">
@@ -26,7 +26,7 @@
                 <action android:name="com.twofortyfouram.locale.intent.action.EDIT_SETTING" />
             </intent-filter>
         </activity>
-        <activity android:name="com.lurebat.keyboard71.tasker.KeyboardOnWordActivity"
+        <activity android:name="com.nqind.keyboard67.tasker.KeyboardOnWordActivity"
                 android:exported="true"
                 android:icon="@mipmap/ic_launcher"
                 android:label="My Event Condition">
@@ -34,7 +34,7 @@
                 <action android:name="net.dinglisch.android.tasker.ACTION_EDIT_EVENT" />
             </intent-filter>
         </activity>
-        <service android:name="com.lurebat.keyboard71.SoftKeyboard" android:permission="android.permission.BIND_INPUT_METHOD"
+        <service android:name="com.nqind.keyboard67.SoftKeyboard" android:permission="android.permission.BIND_INPUT_METHOD"
                 android:showOnLockScreen="true"
                 android:exported="true">
             <intent-filter>

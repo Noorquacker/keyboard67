@@ -1,4 +1,4 @@
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 class RopeNode(val value: CharSequence = "") {
     var left: RopeNode? = null

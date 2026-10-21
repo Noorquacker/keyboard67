@@ -1,4 +1,4 @@
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 data class RelayTouchInfo(
     val touchId: Int,

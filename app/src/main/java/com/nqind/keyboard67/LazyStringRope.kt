@@ -1,4 +1,4 @@
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 import android.view.inputmethod.InputConnection
 import java.text.BreakIterator

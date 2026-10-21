@@ -1,4 +1,4 @@
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 import android.content.Context
 import android.content.Intent
@@ -37,7 +37,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import com.lurebat.keyboard71.BuildConfig;
+import com.nqind.keyboard67.BuildConfig;
 
 @Composable
 fun ComposeSettingsTheme(

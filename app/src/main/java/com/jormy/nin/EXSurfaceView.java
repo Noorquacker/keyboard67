@@ -154,36 +154,36 @@ public class EXSurfaceView extends SurfaceView implements SurfaceHolder.Callback
 
     @Override // android.view.SurfaceHolder.Callback
     public void surfaceCreated(SurfaceHolder holder) {
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "surfaceCreated");
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "surfaceCreated");
         this.mGLThread.surfaceCreated();
     }
 
     @Override // android.view.SurfaceHolder.Callback
     public void surfaceDestroyed(SurfaceHolder holder) {
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "surfaceDestroyed");
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "surfaceDestroyed");
         this.mGLThread.surfaceDestroyed();
     }
 
     @Override // android.view.SurfaceHolder.Callback
     public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "surfaceChanged " + w + "x" + h);
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "surfaceChanged " + w + "x" + h);
         this.mGLThread.onWindowResize(w, h);
     }
 
     public void onPause() {
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "onPause");
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "onPause");
         this.mGLThread.onPause();
     }
 
     public void onResume() {
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "onResume");
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "onResume");
         this.mGLThread.onResume();
     }
 
     @Override // android.view.SurfaceView, android.view.View
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "attached, detached-before=" + this.mDetached);
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "attached, detached-before=" + this.mDetached);
         if (this.mDetached && this.mRenderer != null) {
             int renderMode = 1;
             if (this.mGLThread != null) {
@@ -200,7 +200,7 @@ public class EXSurfaceView extends SurfaceView implements SurfaceHolder.Callback
 
     @Override // android.view.SurfaceView, android.view.View
     protected void onDetachedFromWindow() {
-        if (com.lurebat.keyboard71.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "detached");
+        if (com.nqind.keyboard67.BuildConfig.DEBUG) android.util.Log.d("EXSurfaceView", "detached");
         if (this.mGLThread != null) {
             this.mGLThread.requestExitAndWait();
         }
@@ -623,7 +623,7 @@ public class EXSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                                 EXSurfaceView.sGLThreadManager.notifyAll();
                             }
                             if (!readyToDraw()) {
-                                if (com.lurebat.keyboard71.BuildConfig.DEBUG) {
+                                if (com.nqind.keyboard67.BuildConfig.DEBUG) {
                                     String st = "paused=" + this.mPaused + " hasSurface=" + this.mHasSurface + " bad=" + this.mSurfaceIsBad
                                             + " size=" + this.mWidth + "x" + this.mHeight + " req=" + this.mRequestRender
                                             + " ctx=" + this.mHaveEglContext + " surf=" + this.mHaveEglSurface;

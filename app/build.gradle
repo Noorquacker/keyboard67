@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.lurebat.keyboard71"
+    namespace = "com.nqind.keyboard67"
     def keystorePropertiesFile = rootProject.file("keystore.properties")
     def keystoreProperties = new Properties()
     if (keystorePropertiesFile.exists()) {
@@ -31,7 +31,7 @@ android {
     }
     defaultConfig {
         compileSdk 33
-        applicationId 'com.lurebat.keyboard71'
+        applicationId 'com.nqind.keyboard67'
         minSdkVersion 24
         targetSdkVersion 33
         versionCode 602
@@ -75,7 +75,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    namespace 'com.lurebat.keyboard71'
+    namespace 'com.nqind.keyboard67'
     lint {
         abortOnError false
     }

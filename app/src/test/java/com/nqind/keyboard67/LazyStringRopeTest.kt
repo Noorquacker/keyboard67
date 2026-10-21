@@ -1,4 +1,4 @@
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

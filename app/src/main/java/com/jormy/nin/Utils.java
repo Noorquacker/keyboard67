@@ -13,7 +13,7 @@ import android.media.SoundPool;
 import android.net.Uri;
 import android.os.Vibrator;
 
-import com.lurebat.keyboard71.SoftKeyboard;
+import com.nqind.keyboard67.SoftKeyboard;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -95,7 +95,7 @@ public class Utils {
 
     @Api
     static Context con() {
-        return com.lurebat.keyboard71.SoftKeyboard.Companion.getKeyboard();
+        return com.nqind.keyboard67.SoftKeyboard.Companion.getKeyboard();
     }
 
     @Api

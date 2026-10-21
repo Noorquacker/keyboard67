@@ -1,8 +1,8 @@
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 import android.util.Log
 import android.view.KeyEvent
-import com.lurebat.keyboard71.KotlinUtils.changeIf
+import com.nqind.keyboard67.KotlinUtils.changeIf
 import java.text.BreakIterator
 
 object WordHelper {

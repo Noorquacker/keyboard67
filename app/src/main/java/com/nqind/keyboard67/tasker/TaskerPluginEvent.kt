@@ -1,4 +1,4 @@
-package com.lurebat.keyboard71.tasker
+package com.nqind.keyboard67.tasker
 
 import android.content.Context
 import android.os.Bundle

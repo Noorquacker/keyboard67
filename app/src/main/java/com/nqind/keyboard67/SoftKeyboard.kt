@@ -1,6 +1,6 @@
 @file:Suppress("NAME_SHADOWING")
 
-package com.lurebat.keyboard71
+package com.nqind.keyboard67
 
 import android.inputmethodservice.InputMethodService
 import android.os.Build
@@ -18,8 +18,8 @@ import com.jormy.nin.NINLib.onChangeAppOrTextbox
 import com.jormy.nin.NINLib.onExternalSelChange
 import com.jormy.nin.NINLib.onTextSelection
 import com.jormy.nin.NINLib.onWordDestruction
-import com.lurebat.keyboard71.BuildConfig
-import com.lurebat.keyboard71.tasker.triggerBasicTaskerEvent
+import com.nqind.keyboard67.BuildConfig
+import com.nqind.keyboard67.tasker.triggerBasicTaskerEvent
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.min
 
