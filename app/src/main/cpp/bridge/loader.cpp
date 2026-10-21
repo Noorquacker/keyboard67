@@ -30,6 +30,8 @@ namespace {
 struct Loaded {
     gaddr base = 0;
     u32 image_size = 0;
+    gaddr code_lo = 0, code_hi = 0;  // executable PT_LOAD
+    u32 image_id = 0;                // hash of the build-id note
     gaddr exidx = 0;
     u32 exidx_count = 0;
     std::unordered_map<std::string, gaddr> exports;
@@ -106,6 +108,15 @@ void load_image(const u8* img, size_t size, gaddr base) {
     const Elf32_Phdr* dyn = nullptr;
     for (int i = 0; i < eh->e_phnum; ++i) {
         if (ph[i].p_type == PT_LOAD) max_va = std::max(max_va, ph[i].p_vaddr + ph[i].p_memsz);
+        if (ph[i].p_type == PT_LOAD && (ph[i].p_flags & PF_X)) {
+            L.code_lo = base + ph[i].p_vaddr;
+            L.code_hi = base + ph[i].p_vaddr + ph[i].p_memsz;
+        }
+        if (ph[i].p_type == PT_NOTE && ph[i].p_offset + ph[i].p_filesz <= size) {
+            u32 hsh = 2166136261u;
+            for (u32 k = 0; k < ph[i].p_filesz; ++k) hsh = (hsh ^ img[ph[i].p_offset + k]) * 16777619u;
+            L.image_id = hsh ^ u32(size);
+        }
         if (ph[i].p_type == PT_DYNAMIC) dyn = &ph[i];
         if (ph[i].p_type == PT_ARM_EXIDX) {
             L.exidx = base + ph[i].p_vaddr;
@@ -193,6 +204,9 @@ void load_image(const u8* img, size_t size, gaddr base) {
 }
 
 }  // namespace
+
+u32 guest_image_id() { return L.image_id; }
+bool guest_is_code(gaddr pc) { return pc >= L.code_lo && pc < L.code_hi; }
 
 gaddr guest_sym(const char* name) {
     auto it = L.exports.find(name);

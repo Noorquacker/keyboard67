@@ -3,6 +3,7 @@
 #include <sys/prctl.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
@@ -345,8 +346,41 @@ GuestThread& Ctx::thread() { return *cpu.thread; }
 
 namespace {
 std::atomic<u32> g_next_tid{1};
-thread_local std::unique_ptr<GuestThread> t_thread;
+
+// Guest threads (stack, TLS, JITs with their compiled code) outlive the host threads that used
+// them: when a host thread exits its GuestThread goes back to a small pool, and the next host thread
+// to enter the guest inherits the warmest one instead of compiling everything again.
+std::mutex g_pool_mu;
+std::vector<std::unique_ptr<GuestThread>> g_pool;
+constexpr size_t kPoolMax = 2;
+
+size_t warmth(const GuestThread& t) { return t.cpus.empty() ? 0 : t.compiled_hint; }
+
+void release_to_pool(std::unique_ptr<GuestThread> t) {
+    if (t->depth != -1 || t->exiting) return;  // unwound abnormally; drop it
+    t->specific.clear();
+    wr<s32>(t->tls + tlsoff::kErrno, 0);
+    std::lock_guard lk(g_pool_mu);
+    g_pool.push_back(std::move(t));
+    if (g_pool.size() > kPoolMax) {
+        auto coldest = std::min_element(g_pool.begin(), g_pool.end(),
+                                        [](const auto& a, const auto& b) { return warmth(*a) < warmth(*b); });
+        g_pool.erase(coldest);
+    }
+}
+
+struct ThreadSlot {
+    std::unique_ptr<GuestThread> t;
+    ~ThreadSlot() {
+        if (t) release_to_pool(std::move(t));
+    }
+};
+thread_local ThreadSlot t_slot;
 }  // namespace
+
+void release_current_guest_thread() {
+    if (t_slot.t) release_to_pool(std::move(t_slot.t));
+}
 
 GuestThread::GuestThread() {
     tid = g_next_tid++;
@@ -369,8 +403,25 @@ GuestThread::~GuestThread() {
 }
 
 GuestThread& cur_thread() {
-    if (!t_thread) t_thread = std::make_unique<GuestThread>();
-    return *t_thread;
+    if (!t_slot.t) {
+        {
+            std::lock_guard lk(g_pool_mu);
+            if (!g_pool.empty()) {
+                auto warmest = std::max_element(g_pool.begin(), g_pool.end(),
+                                                [](const auto& a, const auto& b) { return warmth(*a) < warmth(*b); });
+                t_slot.t = std::move(*warmest);
+                g_pool.erase(warmest);
+            }
+        }
+        if (t_slot.t) {
+            char name[32] = "?";
+            prctl(PR_GET_NAME, name);
+            NB_LOGI("host thread '%s' inherited guest tid %u (warm JIT)", name, t_slot.t->tid);
+        } else {
+            t_slot.t = std::make_unique<GuestThread>();
+        }
+    }
+    return *t_slot.t;
 }
 
 void set_guest_errno(int e) { wr<s32>(cur_thread().tls + tlsoff::kErrno, e); }

@@ -50,6 +50,15 @@ class SoftKeyboard : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         keyboard = this
+        // Load the native engine (on 64-bit: JIT setup + guest static constructors) in the
+        // background while the view and its GL surface are still being created.
+        Thread({
+            try {
+                Class.forName("com.jormy.nin.NINLib", true, javaClass.classLoader)
+            } catch (e: Throwable) {
+                Log.w("SoftKeyboard", "native preload failed", e)
+            }
+        }, "nin-preload").start()
         window.window?.addFlags(
             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or

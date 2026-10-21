@@ -179,3 +179,4 @@ google-services.json
 
 # ninbridge
 app/src/main/cpp/.deps/
+*.core

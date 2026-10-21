@@ -20,7 +20,7 @@ set(DYNARMIC_FRONTENDS "A32" CACHE STRING "" FORCE)
 set(DYNARMIC_USE_BUNDLED_EXTERNALS ON CACHE BOOL "" FORCE)
 set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 set(DYNARMIC_USE_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
-foreach(patch dynarmic-small-ir-pool.patch dynarmic-optional-range-tracking.patch)
+foreach(patch dynarmic-small-ir-pool.patch dynarmic-optional-range-tracking.patch dynarmic-skip-verification.patch dynarmic-precompile-api.patch)
     set(_p "${NB_SRC}/patches/${patch}")
     execute_process(COMMAND git apply --reverse --check "${_p}" WORKING_DIRECTORY "${NB_SRC}/third_party/dynarmic"
         RESULT_VARIABLE _already OUTPUT_QUIET ERROR_QUIET)

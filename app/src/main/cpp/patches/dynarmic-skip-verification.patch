@@ -1,0 +1,26 @@
+diff --git a/src/dynarmic/backend/arm64/a32_address_space.cpp b/src/dynarmic/backend/arm64/a32_address_space.cpp
+index d52d55fb..8266d4e1 100644
+--- a/src/dynarmic/backend/arm64/a32_address_space.cpp
++++ b/src/dynarmic/backend/arm64/a32_address_space.cpp
+@@ -176,7 +176,7 @@ IR::Block A32AddressSpace::GenerateIR(IR::LocationDescriptor descriptor) const {
+         Optimization::DeadCodeElimination(ir_block);
+     }
+     Optimization::IdentityRemovalPass(ir_block);
+-    Optimization::VerificationPass(ir_block);
++    // VerificationPass is a debug consistency check; it costs compile time on every block.
+ 
+     return ir_block;
+ }
+diff --git a/src/dynarmic/backend/x64/a32_interface.cpp b/src/dynarmic/backend/x64/a32_interface.cpp
+index d690aada..ea1c25e4 100644
+--- a/src/dynarmic/backend/x64/a32_interface.cpp
++++ b/src/dynarmic/backend/x64/a32_interface.cpp
+@@ -226,7 +226,7 @@ private:
+             Optimization::DeadCodeElimination(ir_block);
+         }
+         Optimization::IdentityRemovalPass(ir_block);
+-        Optimization::VerificationPass(ir_block);
++        // VerificationPass is a debug consistency check; it costs compile time on every block.
+         return emitter.Emit(ir_block);
+     }
+ 

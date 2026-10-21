@@ -1,0 +1,108 @@
+diff --git a/src/dynarmic/backend/arm64/a32_interface.cpp b/src/dynarmic/backend/arm64/a32_interface.cpp
+index 6b38c410..2403aebc 100644
+--- a/src/dynarmic/backend/arm64/a32_interface.cpp
++++ b/src/dynarmic/backend/arm64/a32_interface.cpp
+@@ -126,6 +126,21 @@ struct Jit::Impl final {
+         ASSERT_FALSE("Unimplemented");
+     }
+ 
++    void Precompile(u32 pc) {
++        current_address_space.GetOrEmit(A32::LocationDescriptor{pc, A32::PSR{0x10}, A32::FPSCR{0}});
++    }
++
++    std::vector<u32> CompiledPCs() const {
++        std::vector<u32> pcs;
++        current_address_space.ForEachCompiledLocation([&](IR::LocationDescriptor l) {
++            const A32::LocationDescriptor d{l};
++            if (!d.TFlag() && !d.SingleStepping()) {
++                pcs.push_back(d.PC());
++            }
++        });
++        return pcs;
++    }
++
+ private:
+     void PerformRequestedCacheInvalidation(HaltReason hr) {
+         if (Has(hr, HaltReason::CacheInvalidation)) {
+@@ -232,6 +247,14 @@ void Jit::ClearExclusiveState() {
+     impl->ClearExclusiveState();
+ }
+ 
++void Jit::Precompile(std::uint32_t pc) {
++    impl->Precompile(pc);
++}
++
++std::vector<std::uint32_t> Jit::CompiledPCs() const {
++    return impl->CompiledPCs();
++}
++
+ void Jit::DumpDisassembly() const {
+     impl->DumpDisassembly();
+ }
+diff --git a/src/dynarmic/backend/arm64/address_space.h b/src/dynarmic/backend/arm64/address_space.h
+index 835566bd..1f18081d 100644
+--- a/src/dynarmic/backend/arm64/address_space.h
++++ b/src/dynarmic/backend/arm64/address_space.h
+@@ -39,6 +39,13 @@ public:
+ 
+     CodePtr GetOrEmit(IR::LocationDescriptor descriptor);
+ 
++    template<typename F>
++    void ForEachCompiledLocation(F f) const {
++        for (const auto& [location, entry] : block_entries) {
++            f(location);
++        }
++    }
++
+     void InvalidateBasicBlocks(const tsl::robin_set<IR::LocationDescriptor>& descriptors);
+ 
+     void ClearCache();
+diff --git a/src/dynarmic/backend/x64/a32_interface.cpp b/src/dynarmic/backend/x64/a32_interface.cpp
+index ea1c25e4..4836a616 100644
+--- a/src/dynarmic/backend/x64/a32_interface.cpp
++++ b/src/dynarmic/backend/x64/a32_interface.cpp
+@@ -201,6 +201,12 @@ private:
+         return GetBasicBlock(A32::LocationDescriptor{GetCurrentLocation()}.SetSingleStepping(true)).entrypoint;
+     }
+ 
++public:
++    void Precompile(u32 pc) {
++        GetBasicBlock(A32::LocationDescriptor{pc, A32::PSR{0x10}, A32::FPSCR{0}});
++    }
++
++private:
+     A32EmitX64::BlockDescriptor GetBasicBlock(IR::LocationDescriptor descriptor) {
+         auto block = emitter.GetBasicBlock(descriptor);
+         if (block)
+@@ -336,6 +342,14 @@ void Jit::ClearExclusiveState() {
+     impl->ClearExclusiveState();
+ }
+ 
++void Jit::Precompile(std::uint32_t pc) {
++    impl->Precompile(pc);
++}
++
++std::vector<std::uint32_t> Jit::CompiledPCs() const {
++    return {};
++}
++
+ void Jit::DumpDisassembly() const {
+     impl->DumpDisassembly();
+ }
+diff --git a/src/dynarmic/interface/A32/a32.h b/src/dynarmic/interface/A32/a32.h
+index e1c5b40f..3a387e04 100644
+--- a/src/dynarmic/interface/A32/a32.h
++++ b/src/dynarmic/interface/A32/a32.h
+@@ -92,6 +92,12 @@ public:
+     /// Debugging: Dump a disassembly all compiled code to the console.
+     void DumpDisassembly() const;
+ 
++    /// Compiles the ARM-state block at pc (default FPSCR) ahead of time. Not callable from a callback.
++    void Precompile(std::uint32_t pc);
++
++    /// PCs of the ARM-state blocks currently compiled (empty if the backend cannot report them).
++    std::vector<std::uint32_t> CompiledPCs() const;
++
+     /**
+      * Disassemble the instructions following the current pc and return
+      * the resulting instructions as a vector of their string representations.

@@ -55,8 +55,14 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     jni_set_vm(vm);
     JNIEnv* env = nullptr;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
-    JniFrame frame(env);
-    runtime_init();
+    {
+        JniFrame frame(env);
+        runtime_init();
+        warmup_precompile();
+    }
+    // Usually this runs on the keyboard's background preload thread: hand the now-warm JIT to
+    // whichever thread (the GL thread) calls into the engine next.
+    release_current_guest_thread();
     return JNI_VERSION_1_6;
 }
 
@@ -141,6 +147,7 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_step(JNIEnv* env, jclass cls) {
     double t0 = now_ms();
     call_guest(fn, {genv, gcls});
     g_stats.frame(now_ms() - t0);
+    warmup_note_frame();
 }
 
 // Not part of the original library: lets the view stop rendering while the picture is static.

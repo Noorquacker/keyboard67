@@ -50,7 +50,7 @@ and box86 work:
   emulator (which runs arm64 apps through Google's ndk_translation). The keyboard loads and renders
   (`docs/port/android14-arm64-via-ndk-translation.png`), at ~46 ms/frame because of the double
   translation. A real arm64 phone runs the JIT output natively.
-- [ ] Real arm64 phone (no device was available).
+- [x] **Real arm64 phone (Pixel 9a, Android 17)**: works, and was profiled there (below).
 
 ## Performance (Pixel 9a, Android 17)
 
@@ -64,10 +64,17 @@ Profiled with `simpleperf` on device; fixes so far:
 | `/proc/self/stat` served from a 250 ms snapshot via a virtual fd (`stdio.cpp`) | the engine reads it ~30 times per frame |
 | Lock-free SVC dispatch (`cpu.cpp`) | one mutex per import call removed |
 | dynarmic patch: optional code-range index, disabled | saves host heap; the guest never modifies its code |
+| dynarmic patch: skip the debug-only `VerificationPass` | compile time |
+| Private dlmalloc for all C++ allocations in the library (`host_heap.c`, `host_new.cpp`) | scudo was ~1 s of a cold start (JIT compile churn); native heap 330 MB → ~50 MB |
+| Native library preloaded on a background thread from `SoftKeyboard.onCreate` | guest static constructors overlap view/EGL creation |
+| Guest threads (with their JITs) are pooled instead of destroyed (`cpu.cpp`) | the preload thread's warm JIT is inherited by the GL thread, and by a new GL thread after the view is recreated |
+| Block-profile warm-up (`warmup.cpp`, dynarmic patch `Jit::Precompile`) | compiled block addresses are saved to `files/ninbridge-blocks.bin`; the next start precompiles them in the background (~2 s for ~130k blocks) |
 
-Cold start went from ~40 s to ~2.5 s. Warm typing costs ~11 ms of engine time per touch, and
-frames average 6–8 ms. The first word after a fresh start is ~40–50 ms per touch while the JIT
-compiles. `ninbridge: perf:` lines in logcat report frame and touch timings every 5 s.
+Tap-to-keyboard: ~40 s → **~0.6 s** when the keyboard process is alive (the usual case, since
+Android starts and restarts IME processes in the background). A first run after install pays for
+Android's own startup (~1.2 s) and compilation. Typing costs ~10 ms of engine time per touch, from
+the first word on. Frames average 6–9 ms. `ninbridge: perf:` lines in logcat report frame and touch
+timings every 5 s. Memory is ~420–540 MB PSS, depending on how much code is compiled.
 
 **On-demand rendering** (`NINView.kt`). The original rendered continuously at 60 fps. The view now
 renders when dirty: while a finger is down, for 1.5 s after any touch or text event (the engine's
@@ -76,9 +83,6 @@ timers, e.g. autospace), and while frames keep changing. Otherwise it only steps
 (`gles.cpp`, `NINLib.frameChanged()`). The engine's own `onRoenSignalDirty` fires nearly every
 frame, so it is useless for this. Idle GL-thread CPU went from ~50% to ~4%. On 32-bit devices
 (original library, no `frameChanged`) the view stays continuous.
-
-Still open: ~330 MB of host heap is dynarmic per-block metadata (linking and fastmem fault
-recovery for ~100k+ blocks).
 
 ## Known issues
 

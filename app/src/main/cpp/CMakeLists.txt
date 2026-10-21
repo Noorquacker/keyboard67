@@ -29,7 +29,7 @@ set(DYNARMIC_USE_BUNDLED_EXTERNALS ON CACHE BOOL "" FORCE)
 set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 set(DYNARMIC_USE_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
 # Local fixes to dynarmic, applied to the submodule checkout (idempotent).
-foreach(patch dynarmic-small-ir-pool.patch dynarmic-optional-range-tracking.patch)
+foreach(patch dynarmic-small-ir-pool.patch dynarmic-optional-range-tracking.patch dynarmic-skip-verification.patch dynarmic-precompile-api.patch)
     set(_p "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch}")
     execute_process(COMMAND git apply --reverse --check "${_p}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dynarmic"
@@ -54,12 +54,15 @@ add_library(gl2jni SHARED
     bridge/entry.cpp
     bridge/gles.cpp
     bridge/guest_heap.c
+    bridge/host_heap.c
+    bridge/host_new.cpp
     bridge/jni_bridge.cpp
     bridge/libc.cpp
     bridge/loader.cpp
     bridge/memory.cpp
     bridge/pthread.cpp
     bridge/stdio.cpp
+    bridge/warmup.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/guest_image.S"
 )
 target_link_libraries(gl2jni PRIVATE dynarmic)

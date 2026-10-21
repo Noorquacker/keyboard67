@@ -211,11 +211,17 @@ struct GuestThread {
     std::vector<gaddr> specific;  // pthread_getspecific values
     bool exiting = false;
     u32 exit_value = 0;
+    size_t compiled_hint = 0;  // approx. compiled blocks; used to pick the warmest pooled thread
 
     GuestThread();
     ~GuestThread();
 };
 GuestThread& cur_thread();
+void release_current_guest_thread();  // hand this thread's guest state (warm JIT) to the pool
+
+// Block-profile warm-up (warmup.cpp)
+void warmup_precompile();       // precompile blocks recorded by a previous run
+void warmup_note_frame();       // called per frame; saves the profile now and then
 
 // Offsets inside GuestThread::tls
 namespace tlsoff {
@@ -250,7 +256,9 @@ inline void errno_from_host() { set_guest_errno(errno); }
 
 // ---------------------------------------------------------------- loaded image
 
-gaddr guest_sym(const char* name);  // exported symbol of the guest library (0 if missing)
+gaddr guest_sym(const char* name);
+u32 guest_image_id();
+bool guest_is_code(gaddr pc);  // exported symbol of the guest library (0 if missing)
 std::string symbolize(gaddr pc);
 void guest_exidx(gaddr* start, u32* count);
 
