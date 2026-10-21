@@ -1,3 +1,9 @@
+# Keyboard 67
+
+A continuation of Keyboard 71 (itself a revival of Jormy's Nintype / Keyboard 69) that runs on
+modern 64-bit-only Android phones. The original engine is a closed 32-bit ARM library; on arm64 and
+x86_64 it runs inside ninbridge, an ARM32 JIT translation layer (see [PORTING.md](PORTING.md)).
+
 This is the readme
 
 Rules for contributing:

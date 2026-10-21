@@ -1,4 +1,4 @@
-# arm64 port of libgl2jni.so — progress notes
+# Keyboard 67: arm64 port of libgl2jni.so
 
 ## Approach
 
