@@ -34,8 +34,8 @@ android {
         applicationId 'com.nqind.keyboard67'
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 602
-        versionName "71.5.0"
+        versionCode 670
+        versionName "67.0.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
