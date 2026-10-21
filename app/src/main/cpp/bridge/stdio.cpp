@@ -368,7 +368,7 @@ namespace {
 // ------------------------------------------------------------------ FILE functions
 
 u32 x_fopen(const char* path, const char* mode) {
-    FILE* f = fopen(path, mode);
+    FILE* f = fopen(headless_path(path), mode);
     if (!f) {
         errno_from_host();
         return 0;

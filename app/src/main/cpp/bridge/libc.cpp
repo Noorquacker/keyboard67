@@ -472,6 +472,22 @@ void host_gettimeofday(struct timeval* t) {
 }
 time_t host_time() { return time_t(nb_fake_time_us / 1000000); }
 clock_t host_clock() { return clock_t(nb_fake_time_us); }
+}  // namespace
+const char* headless_path(const char* p) {
+    if (p && strcmp(p, "/proc/self/stat") == 0) {
+        static std::string fixed = [] {
+            std::string f = std::string(getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp") + "/nb_headless_stat";
+            FILE* out = fopen(f.c_str(), "w");
+            fputs("4242 (ninheadless) R 1 4242 4242 0 -1 4194304 1000 0 0 0 100 10 0 0 20 0 1 0 100 "
+                  "268435456 16384 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 0 0 0 0 0 0\n", out);
+            fclose(out);
+            return f;
+        }();
+        return fixed.c_str();
+    }
+    return p;
+}
+namespace {
 #else
 void host_gettimeofday(struct timeval* t) { gettimeofday(t, nullptr); }
 time_t host_time() { return time(nullptr); }
@@ -587,7 +603,7 @@ int oflags_to_guest(int f) {
 }
 
 void x_open(Ctx& c) {
-    const char* path = hs(c.a32());
+    const char* path = headless_path(hs(c.a32()));
     int flags = int(c.a32());
     int mode = int(c.a32());
     c.ret(u32(sysret(open(path, oflags_from_guest(flags) | O_CLOEXEC, mode))));

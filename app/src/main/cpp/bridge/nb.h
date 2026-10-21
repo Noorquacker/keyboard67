@@ -230,6 +230,13 @@ constexpr u32 kSize = 0x1000;
 }  // namespace tlsoff
 
 void set_guest_errno(int e);
+
+// Headless test builds substitute host-dependent files (e.g. /proc/self/stat) with fixed ones.
+#ifdef NB_HEADLESS
+const char* headless_path(const char* p);
+#else
+inline const char* headless_path(const char* p) { return p; }
+#endif
 inline void errno_from_host() { set_guest_errno(errno); }
 
 // ---------------------------------------------------------------- loaded image

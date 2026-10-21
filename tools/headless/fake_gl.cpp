@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <type_traits>
 #include <map>
 #include <string>
 #include <vector>
@@ -20,18 +21,41 @@ uint64_t g_calls = 0, g_draws = 0;
 GLuint g_next_id = 1;
 GLuint g_array_buffer = 0;
 
+extern FILE* g_trace;
 void mix(const void* p, size_t n) {
     auto* b = static_cast<const uint8_t*>(p);
+    if (g_trace && n > 8) {
+        fprintf(g_trace, " <");
+        for (size_t i = 0; i + 4 <= n && i < 4096; i += 4) {
+            float f;
+            memcpy(&f, b + i, 4);
+            fprintf(g_trace, " %.9g", double(f));
+        }
+        fprintf(g_trace, " >");
+    }
     for (size_t i = 0; i < n; ++i) {
         g_hash ^= b[i];
         g_hash *= 1099511628211ull;
     }
+}
+FILE* g_trace = nullptr;  // set by fakegl_trace(): textual log of calls for one frame
+
+template <class T>
+void trace_arg(T v) {
+    if constexpr (std::is_floating_point_v<T>)
+        fprintf(g_trace, " %.9g", double(v));
+    else
+        fprintf(g_trace, " %lld", static_cast<long long>(v));
 }
 template <class... T>
 void rec(const char* fn, T... args) {
     ++g_calls;
     mix(fn, strlen(fn));
     (mix(&args, sizeof args), ...);
+    if (g_trace) {
+        fprintf(g_trace, "\n%s", fn);
+        (trace_arg(args), ...);
+    }
 }
 // Pointers are hashed as guest addresses so the value is independent of where guest space lives.
 uint64_t gptr(const void* p) {
@@ -69,19 +93,70 @@ size_t pixel_size(GLenum format, GLenum type) {
     }
 }
 
-std::map<std::string, GLint> g_locations;
-GLint location(GLuint prog, const GLchar* name) {
-    std::string k = std::to_string(prog) + ":" + name;
-    auto it = g_locations.find(k);
-    if (it != g_locations.end()) return it->second;
-    GLint l = GLint(g_locations.size() % 15);
-    g_locations[k] = l;
-    return l;
+// Just enough GLSL understanding to answer glGetActive{Attrib,Uniform} after linking.
+struct Var {
+    std::string name;
+    GLenum type;
+    GLint size;
+};
+struct Program {
+    std::map<std::string, GLint> bound;  // glBindAttribLocation
+    std::vector<GLuint> shaders;
+    std::vector<Var> attribs, uniforms;
+};
+std::map<GLuint, std::string> g_sources;
+std::map<GLuint, Program> g_programs;
+
+GLenum glsl_type(const std::string& t) {
+    static const std::map<std::string, GLenum> m = {
+        {"float", GL_FLOAT},       {"vec2", GL_FLOAT_VEC2}, {"vec3", GL_FLOAT_VEC3}, {"vec4", GL_FLOAT_VEC4},
+        {"int", GL_INT},           {"ivec2", GL_INT_VEC2},  {"ivec3", GL_INT_VEC3}, {"ivec4", GL_INT_VEC4},
+        {"bool", GL_BOOL},         {"mat2", GL_FLOAT_MAT2}, {"mat3", GL_FLOAT_MAT3}, {"mat4", GL_FLOAT_MAT4},
+        {"sampler2D", GL_SAMPLER_2D}, {"samplerCube", GL_SAMPLER_CUBE}};
+    auto it = m.find(t);
+    return it == m.end() ? GL_FLOAT : it->second;
 }
+
+void parse_decls(const std::string& src, std::vector<Var>& attribs, std::vector<Var>& uniforms) {
+    std::vector<std::string> tok;
+    std::string cur;
+    for (char c : src) {
+        if (isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            cur += c;
+        } else {
+            if (!cur.empty()) tok.push_back(cur), cur.clear();
+            if (c == ';' || c == ',' || c == '[' || c == ']' || c == '{' || c == '}' || c == '(') tok.push_back(std::string(1, c));
+        }
+    }
+    for (size_t i = 0; i < tok.size(); ++i) {
+        bool is_attr = tok[i] == "attribute", is_uni = tok[i] == "uniform";
+        if (!is_attr && !is_uni) continue;
+        size_t j = i + 1;
+        while (j < tok.size() && (tok[j] == "lowp" || tok[j] == "mediump" || tok[j] == "highp")) ++j;
+        if (j >= tok.size()) break;
+        GLenum type = glsl_type(tok[j++]);
+        while (j < tok.size() && tok[j] != ";") {
+            if (tok[j] == ",") { ++j; continue; }
+            Var v{tok[j++], type, 1};
+            if (j + 2 < tok.size() && tok[j] == "[") {
+                v.size = atoi(tok[j + 1].c_str());
+                j += 3;
+            }
+            auto& list = is_attr ? attribs : uniforms;
+            bool dup = false;
+            for (auto& e : list) dup |= e.name == v.name;
+            if (!dup) list.push_back(v);
+        }
+        i = j;
+    }
+}
+
 
 }  // namespace
 
 extern "C" {
+
+void fakegl_trace(FILE* f) { g_trace = f; }
 
 uint64_t fakegl_take_hash(uint64_t* calls, uint64_t* draws) {
     uint64_t h = g_hash;
@@ -93,10 +168,14 @@ uint64_t fakegl_take_hash(uint64_t* calls, uint64_t* draws) {
 }
 
 void glActiveTexture(GLenum t) { rec("ActiveTexture", t); }
-void glAttachShader(GLuint p, GLuint s) { rec("AttachShader", p, s); }
+void glAttachShader(GLuint p, GLuint s) {
+    rec("AttachShader", p, s);
+    g_programs[p].shaders.push_back(s);
+}
 void glBindAttribLocation(GLuint p, GLuint i, const GLchar* n) {
     rec("BindAttribLocation", p, i);
     mix(n, strlen(n));
+    g_programs[p].bound[n] = GLint(i);
 }
 void glBindBuffer(GLenum t, GLuint b) {
     rec("BindBuffer", t, b);
@@ -187,22 +266,31 @@ void glGenTextures(GLsizei n, GLuint* b) { gen("GenTextures", n, b); }
 void glGenerateMipmap(GLenum t) { rec("GenerateMipmap", t); }
 void glGetActiveAttrib(GLuint p, GLuint i, GLsizei bs, GLsizei* len, GLint* size, GLenum* type, GLchar* name) {
     rec("GetActiveAttrib", p, i);
-    if (len) *len = 0;
-    if (size) *size = 0;
-    if (type) *type = 0;
-    if (name && bs) *name = 0;
+    auto& list = g_programs[p].attribs;
+    Var v = i < list.size() ? list[i] : Var{"", GL_FLOAT, 0};
+    if (size) *size = v.size;
+    if (type) *type = v.type;
+    if (name && bs > 0) snprintf(name, size_t(bs), "%s", v.name.c_str());
+    if (len) *len = GLsizei(v.name.size() < size_t(bs) ? v.name.size() : size_t(bs > 0 ? bs - 1 : 0));
 }
 void glGetActiveUniform(GLuint p, GLuint i, GLsizei bs, GLsizei* len, GLint* size, GLenum* type, GLchar* name) {
     rec("GetActiveUniform", p, i);
-    if (len) *len = 0;
-    if (size) *size = 0;
-    if (type) *type = 0;
-    if (name && bs) *name = 0;
+    auto& list = g_programs[p].uniforms;
+    Var v = i < list.size() ? list[i] : Var{"", GL_FLOAT, 0};
+    if (size) *size = v.size;
+    if (type) *type = v.type;
+    if (name && bs > 0) snprintf(name, size_t(bs), "%s", v.name.c_str());
+    if (len) *len = GLsizei(v.name.size() < size_t(bs) ? v.name.size() : size_t(bs > 0 ? bs - 1 : 0));
 }
 GLint glGetAttribLocation(GLuint p, const GLchar* n) {
     rec("GetAttribLocation", p);
     mix(n, strlen(n));
-    return location(p, n);
+    Program& pr = g_programs[p];
+    auto it = pr.bound.find(n);
+    if (it != pr.bound.end()) return it->second;
+    for (size_t i = 0; i < pr.attribs.size(); ++i)
+        if (pr.attribs[i].name == n) return GLint(i);
+    return -1;
 }
 GLenum glGetError() { return GL_NO_ERROR; }
 void glGetIntegerv(GLenum p, GLint* d) {
@@ -225,7 +313,16 @@ void glGetProgramInfoLog(GLuint p, GLsizei, GLsizei* len, GLchar* log) {
 }
 void glGetProgramiv(GLuint p, GLenum n, GLint* v) {
     rec("GetProgramiv", p, n);
-    *v = n == GL_LINK_STATUS || n == GL_VALIDATE_STATUS ? 1 : 0;
+    Program& pr = g_programs[p];
+    switch (n) {
+    case GL_LINK_STATUS:
+    case GL_VALIDATE_STATUS: *v = 1; break;
+    case GL_ACTIVE_ATTRIBUTES: *v = GLint(pr.attribs.size()); break;
+    case GL_ACTIVE_UNIFORMS: *v = GLint(pr.uniforms.size()); break;
+    case GL_ACTIVE_ATTRIBUTE_MAX_LENGTH:
+    case GL_ACTIVE_UNIFORM_MAX_LENGTH: *v = 64; break;
+    default: *v = 0;
+    }
 }
 void glGetShaderInfoLog(GLuint s, GLsizei, GLsizei* len, GLchar* log) {
     rec("GetShaderInfoLog", s);
@@ -249,14 +346,25 @@ const GLubyte* glGetString(GLenum n) {
 GLint glGetUniformLocation(GLuint p, const GLchar* n) {
     rec("GetUniformLocation", p);
     mix(n, strlen(n));
-    return location(p, n);
+    std::string name = n;
+    if (name.size() > 3 && name.compare(name.size() - 3, 3, "[0]") == 0) name.resize(name.size() - 3);
+    auto& u = g_programs[p].uniforms;
+    for (size_t i = 0; i < u.size(); ++i)
+        if (u[i].name == name) return GLint(i);
+    return -1;
 }
 GLboolean glIsEnabled(GLenum c) {
     rec("IsEnabled", c);
     return GL_FALSE;
 }
 void glLineWidth(GLfloat w) { rec("LineWidth", w); }
-void glLinkProgram(GLuint p) { rec("LinkProgram", p); }
+void glLinkProgram(GLuint p) {
+    rec("LinkProgram", p);
+    Program& pr = g_programs[p];
+    pr.attribs.clear();
+    pr.uniforms.clear();
+    for (GLuint s : pr.shaders) parse_decls(g_sources[s], pr.attribs, pr.uniforms);
+}
 void glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum f, GLenum t, void* px) {
     rec("ReadPixels", x, y, w, h, f, t);
     memset(px, 0, size_t(w) * size_t(h) * pixel_size(f, t));
@@ -265,7 +373,14 @@ void glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h) { rec("Rend
 void glScissor(GLint x, GLint y, GLsizei w, GLsizei h) { rec("Scissor", x, y, w, h); }
 void glShaderSource(GLuint s, GLsizei count, const GLchar* const* str, const GLint* len) {
     rec("ShaderSource", s, count);
-    for (GLsizei i = 0; i < count; ++i) mix(str[i], len && len[i] >= 0 ? size_t(len[i]) : strlen(str[i]));
+    std::string& src = g_sources[s];
+    src.clear();
+    for (GLsizei i = 0; i < count; ++i) {
+        size_t n = len && len[i] >= 0 ? size_t(len[i]) : strlen(str[i]);
+        mix(str[i], n);
+        src.append(str[i], n);
+    }
+    if (g_trace) fprintf(g_trace, "\n=== shader %u source ===\n%s\n=== end ===", s, src.c_str());
 }
 void glStencilFunc(GLenum f, GLint r, GLuint m) { rec("StencilFunc", f, r, m); }
 void glStencilMask(GLuint m) { rec("StencilMask", m); }
@@ -294,7 +409,9 @@ void glUniformMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat* v) {
 }
 void glUseProgram(GLuint p) { rec("UseProgram", p); }
 void glVertexAttribPointer(GLuint i, GLint size, GLenum type, GLboolean norm, GLsizei stride, const void* p) {
-    rec("VertexAttribPointer", i, size, type, norm, stride, gptr(p));
+    // Client-array addresses depend on heap layout (which varies with host paths, /proc contents…),
+    // so only VBO offsets are hashed; client data itself is hashed at draw time.
+    rec("VertexAttribPointer", i, size, type, norm, stride, g_array_buffer ? gptr(p) : 0);
     if (i < 16) g_attribs[i] = {g_attribs[i].enabled, size, type, stride, p, g_array_buffer};
 }
 void glViewport(GLint x, GLint y, GLsizei w, GLsizei h) { rec("Viewport", x, y, w, h); }
