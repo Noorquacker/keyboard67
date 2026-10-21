@@ -1023,6 +1023,15 @@ int x_fork() {
     set_guest_errno(ENOSYS);
     return -1;
 }
+u32 x_popen(const char* cmd, const char*) {
+    NB_LOGW("guest popen(\"%s\") refused", cmd ? cmd : "");
+    set_guest_errno(ENOSYS);
+    return 0;
+}
+int x_pclose(u32) {
+    set_guest_errno(ECHILD);
+    return -1;
+}
 int x_execvp(u32, u32) {
     set_guest_errno(ENOSYS);
     return -1;
@@ -1328,6 +1337,8 @@ void register_libc() {
     NB_REG("waitpid", x_waitpid);
     NB_REG("fork", x_fork);
     NB_REG("execvp", x_execvp);
+    NB_REG("popen", x_popen);
+    NB_REG("pclose", x_pclose);
 
     NB_REG("select", x_select);
     NB_REG("poll", x_poll);

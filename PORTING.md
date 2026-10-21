@@ -41,17 +41,27 @@ and box86 work:
 - [x] **Desktop harness works** (`tools/hosttest/run.sh`): real JVM + EGL. Static constructors
   run, init loads the dictionary (77k words), the keyboard renders correctly, taps move through
   the tutorial. About 15 ms/frame steady state.
-- [ ] Headless harness (`tools/headless`, fake JNI + recording GL + fake clock) to compare the
-  arm64 JIT backend (under qemu-aarch64) against x86_64 frame-hash by frame-hash. *In progress.*
 - [x] Gradle integration (externalNativeBuild, abiFilters arm64-v8a/x86_64/armeabi-v7a, `nin.ndkPath`).
 - [x] **Android 14 x86_64 emulator**: keyboard loads (~4 s cold start), renders at 60 fps
   (~6 ms/frame), and typing commits text through InputConnection, with dictionary suggestions.
   See `docs/port/android14-x86_64-typing.png`.
 - [x] Headless check: arm64 JIT output matches x86_64 frame-for-frame (`tools/headless`).
+- [x] **arm64-v8a build on Android**: installed with `adb install --abi arm64-v8a` on the same
+  emulator (which runs arm64 apps through Google's ndk_translation). The keyboard loads and renders
+  (`docs/port/android14-arm64-via-ndk-translation.png`), at ~46 ms/frame because of the double
+  translation. A real arm64 phone runs the JIT output natively.
 - [ ] Real arm64 phone (no device was available).
+
+## Building
+
+- NDK r27+ (`nin.ndkPath=...` in `local.properties`, or install NDK 27.2.12479018 in the SDK).
+- `git submodule update --init --recursive` (dynarmic and its externals).
+- Boost headers: found in `/usr/include` if installed, otherwise downloaded once into
+  `app/src/main/cpp/.deps`.
+- Gradle 8.0 needs JDK 17 (Kotlin 1.8 cannot target JVM 21).
 
 ## Known gaps
 
-- `popen`/`pclose` are unimplemented (abort if called; not hit so far). `fork`/`system`/`dlopen` refuse.
+- `popen`/`fork`/`system`/`dlopen` are refused (return failure); not hit in testing.
 - pthread key destructors are not run; `RegisterNatives` from the guest is unsupported.
 - File `mmap` at offsets not aligned to the host page size fails on 16 KiB-page devices.

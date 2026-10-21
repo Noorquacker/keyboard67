@@ -9,7 +9,8 @@ Rules for contributing:
 
 Architechture:
 
-1. libgl2jni.so - The native library. Untouchable.
+1. libgl2jni.so - The native library. Untouchable. (32-bit ARM only; on arm64/x86_64 it runs inside
+   ninbridge, an ARM32 JIT layer in app/src/main/cpp. See PORTING.md.)
 2. NINLib.kt -> interfaces from the app into the library. 
 3. Methods marked @Api (by me, you're welcome). Methods that the library calls as the API.
     DO NOT CHANGE THEIR SIGNATURE
