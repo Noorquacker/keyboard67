@@ -43,8 +43,12 @@ and box86 work:
   the tutorial. About 15 ms/frame steady state.
 - [ ] Headless harness (`tools/headless`, fake JNI + recording GL + fake clock) to compare the
   arm64 JIT backend (under qemu-aarch64) against x86_64 frame-hash by frame-hash. *In progress.*
-- [ ] Gradle integration (externalNativeBuild, abiFilters arm64-v8a/x86_64/armeabi-v7a, ndkPath).
-- [ ] Test on an Android emulator (x86_64 build) and on a real arm64 phone.
+- [x] Gradle integration (externalNativeBuild, abiFilters arm64-v8a/x86_64/armeabi-v7a, `nin.ndkPath`).
+- [x] **Android 14 x86_64 emulator**: keyboard loads (~4 s cold start), renders at 60 fps
+  (~6 ms/frame), and typing commits text through InputConnection, with dictionary suggestions.
+  See `docs/port/android14-x86_64-typing.png`.
+- [x] Headless check: arm64 JIT output matches x86_64 frame-for-frame (`tools/headless`).
+- [ ] Real arm64 phone (no device was available).
 
 ## Known gaps
 
