@@ -351,7 +351,9 @@ std::atomic<u32> g_next_tid{1};
 // them: when a host thread exits its GuestThread goes back to a small pool, and the next host thread
 // to enter the guest inherits the warmest one instead of compiling everything again.
 std::mutex g_pool_mu;
-std::vector<std::unique_ptr<GuestThread>> g_pool;
+// Deliberately leaked: destroying JITs during static destruction at process exit races dynarmic's
+// own statics (and the OS reclaims everything anyway).
+auto& g_pool = *new std::vector<std::unique_ptr<GuestThread>>;
 constexpr size_t kPoolMax = 2;
 
 size_t warmth(const GuestThread& t) { return t.cpus.empty() ? 0 : t.compiled_hint; }
@@ -373,6 +375,8 @@ struct ThreadSlot {
     std::unique_ptr<GuestThread> t;
     ~ThreadSlot() {
         if (t) release_to_pool(std::move(t));
+        // Never destroy a GuestThread here: on the main thread this runs during process exit.
+        (void)t.release();
     }
 };
 thread_local ThreadSlot t_slot;
