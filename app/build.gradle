@@ -89,8 +89,35 @@ android {
 
     defaultConfig {
         ndk {
-            abiFilters "armeabi"
+            // armeabi-v7a: the original 32-bit libgl2jni.so, run natively.
+            // arm64-v8a / x86_64: ninbridge (src/main/cpp), which runs that same library under an
+            // ARM32 JIT so the keyboard works on 64-bit-only devices.
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
         }
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1+"
+        }
+    }
+
+    // NDK r27+ is required (16 KiB page support). Point at a local install with
+    // `nin.ndkPath=/path/to/ndk` in local.properties, otherwise the SDK's NDK of this version is used.
+    def localProps = new Properties()
+    if (rootProject.file("local.properties").exists()) {
+        localProps.load(new FileInputStream(rootProject.file("local.properties")))
+    }
+    if (localProps['nin.ndkPath']) {
+        ndkPath localProps['nin.ndkPath']
+    } else {
+        ndkVersion "27.2.12479018"
     }
 }
 tasks.withType(KotlinCompile).configureEach {
